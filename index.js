@@ -34,7 +34,13 @@ const exerciseSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 const Exercise = mongoose.model('Exercise', exerciseSchema);
 
-app.post('/api/users/', (req, res) => {
+app.get('/api/users', (req, res) => {
+  User.find({})
+    .then(users => res.json(users))
+    .catch(err => res.json(err));
+});
+
+app.post('/api/users', (req, res) => {
   const username = { username: req.body.username };
   new User(username).save()
     .then(() => {
@@ -63,21 +69,35 @@ app.post('/api/users/:_id/exercises', (req, res) => {
     .catch(err => res.json(err));
 });
 
-app.get('/api/users/:_id/logs?[from][&to][&limit]', (req, res) => {
+// https://3000-freecodecam-boilerplate-013bsseysmv.ws-us116.gitpod.io/api/users/6714f8b1171db8fbeafe26bd/logs
+app.get('/api/users/:_id/logs', (req, res) => {
   const { from, to, limit } = req.query;
   const _id = req.params._id;
   let query = { _id };
 
   if (from || to) {
     query.date = {};
-    if (from) query.date.$gte = new Date(from);
-    if (to) query.date.$lte = new Date(to);
+    if (from) query.date.$gte = new Date(from + 'T00:00:00Z'); // Ensure proper date format
+    if (to) query.date.$lte = new Date(to + 'T23:59:59Z'); // Ensure proper date format
   }
 
-  Exercise.find(query)
-    .sort({ date: 1 })
-    .limit(parseInt(limit) || 0)
-    .then(dataList => res.json(dataList))
+  User.findOne({ _id })
+    .then(user => {
+      Exercise.find(query)
+        .sort({ date: 1 })
+        .limit(parseInt(limit) || 0)
+        .then(execsList => res.json({
+          _id,
+          username: user.username,
+          count: execsList.length,
+          log: execsList.map(exec => ({
+            description: exec.description,
+            duration: exec.duration,
+            date: exec.date
+          }))
+        }))
+        .catch(err => res.json(err))
+    })
     .catch(err => res.json(err));
 });
 
