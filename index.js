@@ -15,7 +15,6 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html')
 });
 
-
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -41,64 +40,71 @@ app.get('/api/users', (req, res) => {
 });
 
 app.post('/api/users', (req, res) => {
-  const username = { username: req.body.username };
-  new User(username).save()
-    .then(() => {
-      User.findOne(username)
+  const user = { username: req.body.username };
+  new User(user).save()
+    .then(() =>
+      User.findOne(user)
         .then(data => res.json(data))
-        .catch(err => res.json(err));
-    })
+        .catch(err => res.json(err))
+    )
     .catch(err => res.json(err));
 });
 
-app.post('/api/users/:_id/exercises', (req, res) => {
-  User.findOne({ _id: req.params._id })
-    .then(data => {
+app.post('/api/users/:userId/exercises', (req, res) => {
+  User.findById(req.params.userId)
+    .then(user => {
       const exec = {
-        _id: req.params._id,
-        username: data.username,
+        username: user.username,
         description: req.body.description,
         duration: parseInt(req.body.duration),
-        date: new Date(req.body.date).toDateString()
+        date: req.body.date ? new Date(req.body.date) : new Date()
       };
       new Exercise(exec).save()
-        .then(() => res.json(exec))
+        .then(() => {
+          exec.date = exec.date.toDateString();
+          exec._id = req.params.userId;
+          res.json(exec);
+        })
         .catch(err => res.json(err));
-
     })
     .catch(err => res.json(err));
 });
 
-// https://3000-freecodecam-boilerplate-013bsseysmv.ws-us116.gitpod.io/api/users/6714f8b1171db8fbeafe26bd/logs
-app.get('/api/users/:_id/logs', (req, res) => {
+app.get('/api/users/:userId/logs', (req, res) => {
   const { from, to, limit } = req.query;
-  const _id = req.params._id;
-  let query = { _id };
+  const userId = req.params.userId;
 
-  if (from || to) {
-    query.date = {};
-    if (from) query.date.$gte = new Date(from + 'T00:00:00Z'); // Ensure proper date format
-    if (to) query.date.$lte = new Date(to + 'T23:59:59Z'); // Ensure proper date format
-  }
-
-  User.findOne({ _id })
+  User.findById(userId)
     .then(user => {
-      Exercise.find(query)
-        .sort({ date: 1 })
-        .limit(parseInt(limit) || 0)
-        .then(execsList => res.json({
-          _id,
-          username: user.username,
-          count: execsList.length,
-          log: execsList.map(exec => ({
-            description: exec.description,
-            duration: exec.duration,
-            date: exec.date
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      let execQuery = Exercise.find({ username: user.username });
+      if (limit) execQuery.limit(parseInt(limit));
+
+      execQuery.then(execList => {
+        // find range
+        if (from) execList = execList.filter(e => new Date(e.date) > new Date(from));
+        if (to) execList = execList.filter(e => new Date(e.date) < new Date(to));
+
+        // sort and arrange elements
+        const log = execList
+          .sort((a, b) => new Date(a.date) - new Date(b.date))
+          .map(e => ({
+            description: e.description,
+            duration: e.duration,
+            date: new Date(e.date).toDateString()
           }))
-        }))
-        .catch(err => res.json(err))
+
+        res.json({
+          username: user.username,
+          count: log.length,
+          _id: userId,
+          log
+        });
+      })
+      //.catch(err => res.status(500).json({ err, msg: 'Error retrieving logs' }));
     })
-    .catch(err => res.json(err));
+  //    .catch(err => res.status(500).json({ err, msg: 'Error finding user' }));
 });
 
 
