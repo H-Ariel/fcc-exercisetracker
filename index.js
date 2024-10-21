@@ -11,10 +11,6 @@ app.use(cors())
 app.use(express.static('public'))
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/views/index.html')
-});
-
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -32,6 +28,10 @@ const exerciseSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 const Exercise = mongoose.model('Exercise', exerciseSchema);
+
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/views/index.html')
+});
 
 app.get('/api/users', (req, res) => {
   User.find({})
@@ -78,33 +78,37 @@ app.get('/api/users/:userId/logs', (req, res) => {
     .then(user => {
       if (!user) return res.status(404).json({ error: 'User not found' });
 
-      let execQuery = Exercise.find({ username: user.username });
-      if (limit) execQuery.limit(parseInt(limit));
+      Exercise.find({ username: user.username })
+        .then(execList => {
+          // sort and arrange elements
+          let log = execList
+            .sort((a, b) => new Date(a.date) - new Date(b.date))
+            .map(e => ({
+              description: e.description,
+              duration: e.duration,
+              date: new Date(e.date).toDateString()
+            }));
 
-      execQuery.then(execList => {
-        // find range
-        if (from) execList = execList.filter(e => new Date(e.date) > new Date(from));
-        if (to) execList = execList.filter(e => new Date(e.date) < new Date(to));
+          // find range
+          if (from) log = log.filter(e => new Date(e.date) > new Date(from));
+          if (to) log = log.filter(e => new Date(e.date) < new Date(to));
 
-        // sort and arrange elements
-        const log = execList
-          .sort((a, b) => new Date(a.date) - new Date(b.date))
-          .map(e => ({
-            description: e.description,
-            duration: e.duration,
-            date: new Date(e.date).toDateString()
-          }))
+          // limit results if needed
+          if (limit) {
+            if (log.length > parseInt(limit))
+              log = log.slice(0, parseInt(limit));
+          }
 
-        res.json({
-          username: user.username,
-          count: log.length,
-          _id: userId,
-          log
-        });
-      })
-      //.catch(err => res.status(500).json({ err, msg: 'Error retrieving logs' }));
+          res.json({
+            username: user.username,
+            count: log.length,
+            _id: userId,
+            log
+          });
+        })
+        .catch(err => res.status(500).json({ err, msg: 'Error retrieving logs' }));
     })
-  //    .catch(err => res.status(500).json({ err, msg: 'Error finding user' }));
+    .catch(err => res.status(500).json({ err, msg: 'Error finding user' }));
 });
 
 
